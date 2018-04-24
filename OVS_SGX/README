@@ -1,0 +1,40 @@
+1. Clone OVS repository
+	git clone https://github.com/openvswitch/ovs.git
+	cd ovs/
+	git checkout 4b27db644a8c8e8d2640f2913cbdfa7e4b78e788
+
+	sudo apt-get install python python-pip
+	sudo pip install six
+
+2. Copy the two files to OVS repository
+	
+	
+
+3. Browse to OVS directory
+	cd ovs/
+
+4. Change to root 
+	sudo su -
+
+5. Configure:
+	./boot.sh	
+	./configure CFLAGS="-D SGX -I/home/khalid/Trusted_OVS/openssl_client/mbedtls/include/ -I/home/khalid/Trusted_OVS/openssl_client/mbedtls-SGX/example/linux/App"  LDFLAGS="-L/home/khalid/ovs/lib/ -L/home/khalid/Trusted_OVS/openssl_client/mbedtls/library/ -L/home/khalid/Trusted_OVS/openssl_client/mbedtls-SGX/example/linux/App -lwrapper_sgx -lmbedtls -lmbedx509 -lmbedcrypto -lstdc++"
+
+6. Make:
+	make
+
+7. Install
+	make install
+
+8. Install kernel moduels
+	make modules_install
+
+9. Mark ovs-vswitchd file for measurement
+	setfattr -n security.SMACK64 -v M /usr/local/sbin/ovs-vswitchd
+
+10. Prepare
+	mkdir -p /usr/local/etc/openvswitch
+	ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
+11. Starting
+	./startup.sh
+

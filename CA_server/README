@@ -1,0 +1,8 @@
+1. Create CA private key (password chosen will be needed every time the CA server is started)
+	openssl genrsa -des3 -out rootca-key.pem 1024
+
+2. Create CA certificate (sign public key using private key)
+	openssl req -new -x509 -days 3650 -key rootca-key.pem -out rootca-cert.pem -config openssl.cnf
+
+3. make
+4. ./CA_server (use password chosen in 1)

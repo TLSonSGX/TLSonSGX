@@ -1,0 +1,14 @@
+########## Keys and Certificate Generation Time
+### Currently measurement is printed to terminal.
+./key_gen_time.sh
+
+########## UDP Packet round trip Latency measurements
+1. create the two network namespaces 
+	./add-port.sh 1 sw1
+	./add-port.sh 2 sw1
+
+2. start the echo server
+sudo ip netns exec ns2 taskset -c 0 python udpecho_3.py &
+
+3. start the traffic generator, results will be printed ino results.txt
+./measure_lat_v2.sh

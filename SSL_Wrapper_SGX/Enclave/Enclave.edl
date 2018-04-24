@@ -1,0 +1,31 @@
+enclave {
+    include "mbedtls/x509_crt.h"
+    from "mbedtls_sgx.edl" import *;
+
+
+
+    trusted {
+		public int ecall_ssl_read([out, size=buf_len] char* buf, size_t buf_len);
+		public int ecall_ssl_write([in, size=buf_len] char* buf, size_t buf_len);
+		public int ecall_ssl_get_error(int ret);
+		public int ecall_ssl_connect();
+		public int ecall_ssl_set_fd(int fd);
+		public int ecall_ssl_accept();
+		public void ecall_ssl_library_init([in, size=buf_len] char* buf, size_t buf_len);
+		public void ecall_ssl_load_error_strings();
+		public void ecall_ssl_new();
+		public void ecall_ssl_free();
+		public void ecall_ssl_ctx_free();
+		public void ecall_ssl_ctx_set_verify();
+		public void ecall_ssl_ctx_new();
+		public void ecall_ssl_get_peer_certificate([out] mbedtls_x509_crt *cert);
+
+		public int ecall_ssl_shutdown();
+		public int ecall_ssl_get_state();
+	};
+
+    untrusted {
+        /* define OCALLs here. */
+
+    };
+};

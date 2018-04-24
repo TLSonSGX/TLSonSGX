@@ -1,0 +1,11 @@
+1. Install RYU SDN Controller.
+
+2. Create Certificate Request
+	openssl req -newkey rsa:2048 -keyout ctl-privkey.pem -config openssl.cnf -out ctl-req.pem -nodes
+
+3. Copy ctl-req.pem to CA and get it signed and then copy it back to SDN directory
+	openssl ca -config openssl.cnf -out ctl-cert.pem -infiles ctl-req.pem
+
+4. copy generated ctl-req.pem and Root CA cert (rootca-cert.pem) to SDN_Controller directory
+
+5. Use the Makefile to start the desired SDN controller program

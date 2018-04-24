@@ -1,0 +1,481 @@
+#include "wrapper_ssl.h"
+using namespace std;
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/pk.h"
+#include <sgx_urts.h>
+
+#include "Enclave_u.h"
+#include "Utils.h"
+
+#define SAMPLE_SIZE 100000
+static sgx_enclave_id_t eid = 0;
+
+static int enclave_status = 10;
+
+//Enclave time measurement
+float ssl_read_enclave_time[SAMPLE_SIZE][2];
+float ssl_write_enclave_time[SAMPLE_SIZE][2];
+float ssl_state_enclave_time[SAMPLE_SIZE];
+float ssl_error_enclave_time[SAMPLE_SIZE];
+static struct timespec t1 = {.tv_sec=0,.tv_nsec=0};
+static struct timespec t2 = {.tv_sec=0,.tv_nsec=0};
+int read_i=0;
+int write_i=0;
+int state_i=0;
+int error_i=0;
+//Enclave time measurement
+
+
+
+//#define PRINT_FUNC() printf("#####%s\n",__PRETTY_FUNCTION__)
+#define PRINT_FUNC()
+
+#include <string>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <time.h>
+#include <unistd.h>
+
+using namespace std;
+
+//timemeasurement
+#define NSEC_PER_SEC 1000000000L
+#define NSEC_PER_MSEC 1000000L
+
+#define timerdiff(a,b) ((float)((a)->tv_sec - (b)->tv_sec) + \
+((float)((a)->tv_nsec - (b)->tv_nsec))/NSEC_PER_MSEC)
+
+//
+
+
+string getIMAmeasure()
+{
+	string col1;
+	string col2;
+	string col3;
+	string col4;
+	string col5;
+	string fileToMeasure="/usr/local/sbin/ovs-vswitchd";
+	string currentMeasure;
+	
+	ifstream inputFile("/sys/kernel/security/ima/ascii_runtime_measurements");
+	string line;
+	while(getline(inputFile,line))
+	{
+		istringstream ss(line);
+		ss >> col1 >> col2 >> col3 >> col4 >> col5;
+		if (col5==fileToMeasure)
+		{
+			currentMeasure=col4;
+		}
+	}
+	string header="IMA";
+	string withHeader=header+currentMeasure;
+	return withHeader;
+}
+
+/* Library initialization */
+
+int SSL_library_init() {
+  PRINT_FUNC();
+if (enclave_status==10)
+ {
+  initialize_enclave(&eid);
+  enclave_status=0;
+  printf("@@@SSL Library_init: enclave initilizaed\n");
+ }
+  string lastMeasureString=getIMAmeasure();
+  float key_gen_time = 0;
+//  static struct timespec t1 = {.tv_sec=0,.tv_nsec=0};
+//  static struct timespec t2 = {.tv_sec=0,.tv_nsec=0};
+  char *lastMeasure=lastMeasureString.c_str();
+  //clock_t keyStart = clock();
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  ecall_ssl_library_init(eid,lastMeasure,128);
+  clock_gettime(CLOCK_MONOTONIC, &t2);
+  //key_gen_time=(double)(clock() - keyStart)/CLOCKS_PER_SEC; 
+  key_gen_time=timerdiff(&t2, &t1);	
+  printf("Key generation time: %.2fs\n", key_gen_time);
+  ofstream myfile("key_gen.txt",ios_base::app);
+	myfile << key_gen_time << "\n";
+ 
+  /* SSL_library_init() always returns "1" */
+  return 1;
+}
+
+/* CTX functions */
+
+SSL_METHOD* SSLv23_client_method() {
+  PRINT_FUNC();
+  static SSL_METHOD SSLv23_client = { MBEDTLS_SSL_IS_CLIENT,
+                                      MBEDTLS_SSL_MAJOR_VERSION_3,
+                                      MBEDTLS_SSL_MINOR_VERSION_0 };
+
+  return &SSLv23_client;
+}
+
+
+SSL_CTX *SSL_CTX_new(SSL_METHOD* ssl_method) {
+  PRINT_FUNC();
+  SSL_CTX *ctx = calloc(1, sizeof(*ctx));
+  ecall_ssl_ctx_new(eid);
+  return ctx;
+}
+
+void SSL_CTX_free(SSL_CTX *ctx) {
+ PRINT_FUNC();
+ ecall_ssl_ctx_free(eid);
+ free(ctx);
+}
+
+void SSL_CTX_set_verify(SSL_CTX *ctx, int mode, void* reserved) {
+  //SSL_VERIFY_REQUIRED is hardcoded
+  PRINT_FUNC();
+  ecall_ssl_ctx_set_verify(eid);
+}
+
+void SSL_set_verify(SSL *ssl, int mode, void* reserved) {
+  //In the SGX implementation, this function should never be called as OVS should always verify peer cert
+  PRINT_FUNC();
+  //printf("@@@SSL_set_verify is called, it should not be called , as it is not implemented\n");
+  return; 
+}
+
+
+long SSL_CTX_set_mode(SSL_CTX *ctx, long mode) {
+  (void) ctx;
+  /*
+   * PolarSSL required to recall ssl_write with the SAME parameters
+   * in case of WANT_WRITE and SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
+   * doesn't support directly
+   * but since PolarSSL stores sent data as OFFSET (not pointer)
+   * it is not a problem to move buffer (if data remains the same)
+   * Cannot return error from SSL_CTX_set_mode
+   * As result - do nothing
+   */
+/* Open vSwitch sets SSL_MODE_ENABLE_PARTIAL_WRITE and SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER
+*  As mbedtls documentation "ssl write will do partial writes sometimes" probably ssl_write might need to be recalled based on return value"
+*/
+  PRINT_FUNC();
+  return mode;
+}
+
+X509 *SSL_get_peer_certificate(SSL* ssl)
+{
+  PRINT_FUNC();
+  X509 *cert= (X509*)calloc(1, sizeof(*cert));
+  mbedtls_x509_crt_init(cert);
+  //printf("@@@SSL_get_peer_certificate: before ecall\n");
+  ecall_ssl_get_peer_certificate(eid, cert);
+  //printf("@@@SSL_get_peer_certificate: after ecall:peer cert version is %d\n", (cert->version));
+  return cert;
+}
+
+X509_NAME *X509_get_subject_name(X509 *cert)
+{
+ PRINT_FUNC();
+	if (cert == NULL)
+	{
+	printf("@@@X509_get_subject_name:cert is Null\n");
+	}
+	return &(cert->subject);
+
+}
+
+char *X509_NAME_oneline(X509_NAME *subject, char *buf, int size)
+{
+ PRINT_FUNC();
+ char *name=calloc(1, 2048);
+ mbedtls_x509_dn_gets( name, 2048, subject);
+ return name;
+}
+
+void SSL_load_error_strings()
+{
+PRINT_FUNC();
+ecall_ssl_load_error_strings(eid);
+}
+
+
+void X509_free(X509 *crt)
+{
+ PRINT_FUNC();
+ free(crt);
+ //printf("@@@X509_free: after X509_free\n");
+}
+
+
+/* SSL functions */
+
+SSL *SSL_new(SSL_CTX *ctx) {
+  PRINT_FUNC();
+  SSL *ssl = (SSL*)calloc(1, sizeof(*ssl));
+  ecall_ssl_new(eid);
+  printf("@@@SSL_new: After ecall\n");
+  return ssl;
+}
+
+void SSL_free(SSL *ssl) {
+	PRINT_FUNC();
+	ecall_ssl_free(eid);
+	free(ssl);
+	//printf("@@@SSL_free:Leaving\n");
+}
+
+/*
+ * PolarSSL functions return error code direcly,
+ * it stores in ssl::last_error because some OpenSSL functions
+ * assumes 0/1 retval only.
+ */
+int SSL_get_error(const SSL *ssl, int ret) {
+  PRINT_FUNC();
+  int ret1=0;
+clock_gettime(CLOCK_MONOTONIC, &t1);
+  ecall_ssl_get_error(eid, &ret1, ret);
+clock_gettime(CLOCK_MONOTONIC, &t2);
+if (error_i<SAMPLE_SIZE/4)
+        {
+        ssl_error_enclave_time[error_i]=timerdiff(&t2, &t1);     
+        error_i++;
+        }
+if (error_i==SAMPLE_SIZE/4)
+        {
+        ofstream myfile ("ssl_error.txt");
+        if (myfile.is_open())
+             {
+             for(int count = 0; count < SAMPLE_SIZE/4; count ++){
+                myfile << ssl_error_enclave_time[count] << "\n " ;
+                }
+             myfile.close();
+             error_i++;
+                }
+        else cout << "Unable to open file";
+        }
+  return ret1;
+}
+
+int SSL_want(const SSL *ssl)
+{
+  PRINT_FUNC();
+  int ret1=0;
+  ecall_ssl_get_error(eid, &ret1, 1);
+  if (ret1 == SSL_ERROR_WANT_READ)
+	{
+	return SSL_READING;
+	}
+  else if (ret1 == SSL_ERROR_WANT_WRITE)
+	{
+	return SSL_WRITING;
+	}
+  return ret1;
+}
+
+int SSL_set_fd(SSL *ssl, int fd) {
+  PRINT_FUNC();
+  int ret=0;
+  //printf("@@@SSL_set_fd: Before and fd value is %d\n", fd);
+  ecall_ssl_set_fd(eid, &ret, fd);
+  //printf("@@@SSL_set_fd: After ecall\n");
+  return 1;
+}
+
+/* PolarSSL read/write functions work as OpenSSL analogues */
+int SSL_read(SSL *ssl, void *buf, int num) {
+  PRINT_FUNC();
+  int ret=0;
+  //static struct timespec t1 = {.tv_sec=0,.tv_nsec=0};
+  //static struct timespec t2 = {.tv_sec=0,.tv_nsec=0};
+
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  ecall_ssl_read(eid, &ret, buf, num);
+  clock_gettime(CLOCK_MONOTONIC, &t2);
+  if (ret>8)
+  {
+  if (read_i<SAMPLE_SIZE)
+	{
+	ssl_read_enclave_time[read_i][0]=timerdiff(&t2, &t1);
+	ssl_read_enclave_time[read_i][1]=ret;
+	//cout << "SSL_read" << ssl_read_enclave_time[read_i][0] << "," << ssl_read_enclave_time[read_i][1] << "\n ";
+	read_i++;
+	}
+  }
+  if (read_i==SAMPLE_SIZE)
+	{
+	ofstream myfile ("ssl_read.txt");
+	if (myfile.is_open())
+             {
+             for(int count = 0; count < SAMPLE_SIZE; count ++){
+                myfile << ssl_read_enclave_time[count][0] << "," << ssl_read_enclave_time[count][1] << "\n " ;
+                }
+             myfile.close();
+	     read_i++;
+		}
+        else cout << "Unable to open file";
+	}
+  //char rec[2048];
+  //strcpy(rec, buf);
+  //rec[ret]=0;
+  //printf("@@@SSL_read:Output from SSL_read %s\n", rec);
+  	
+  //printf( "@@@SSL_read: %d bytes read\n\n%s", ret, rec );
+  //printf("@@@SSL_read:Return from SSL_read %d\n", ret);
+  //printf("@@@SSL_read:Num in SSL_read %d\n", num);
+  return ret;
+}
+
+int SSL_write(SSL *ssl, const void *buf, int num) {
+  PRINT_FUNC();
+  int ret=0;
+  //static struct timespec t1 = {.tv_sec=0,.tv_nsec=0};
+  //static struct timespec t2 = {.tv_sec=0,.tv_nsec=0};
+
+  //printf("@@@SSL_write: before ecall\n");
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  ecall_ssl_write(eid, &ret, buf, num);
+  clock_gettime(CLOCK_MONOTONIC, &t2);
+  if (ret > 8)
+  {
+  if (write_i<SAMPLE_SIZE)
+        {
+        ssl_write_enclave_time[write_i][0]=timerdiff(&t2, &t1);
+	ssl_write_enclave_time[write_i][1]=ret;
+	//cout << "SSL_write" << ssl_write_enclave_time[write_i][0] << "," << ssl_write_enclave_time[write_i][1] << "\n " ;
+        write_i++;
+        }
+  }
+  if (write_i==SAMPLE_SIZE)
+        {
+        ofstream myfile ("ssl_write.txt");
+        if (myfile.is_open())
+             {
+             for(int count = 0; count < SAMPLE_SIZE; count ++){
+                myfile << ssl_write_enclave_time[count][0] << "," << ssl_write_enclave_time[count][1] << "\n " ;
+                }
+             myfile.close();
+	     write_i++;
+             }
+        else cout << "Unable to open file";
+        }
+
+ //printf("@@@SSL_write: after ecall\n");
+  return ret;
+// when testing pay attention to SSL_CTX_set_mode values impact
+}
+
+int SSL_connect(SSL *ssl) {
+  PRINT_FUNC();
+  int ret=0;
+  ecall_ssl_connect(eid, &ret);
+  //printf("@@@SSL_connect:after ecall return value is %d\n", ret);
+  return ret;
+}
+
+int SSL_accept(SSL *ssl) {
+  PRINT_FUNC();
+  int ret=0;
+  ecall_ssl_accept(eid, &ret);
+  return ret;
+}
+
+int SSL_get_verify_mode(SSL *ssl)
+{
+PRINT_FUNC();
+// Need to check the different between SSL and SSL_CTX verify mode, for now return 1
+return 1;
+}
+
+int SSL_get_state(SSL *ssl)
+{
+PRINT_FUNC();
+// No mapping done yet. In OVS, the main use of the states is to decide the reading writing status, so should be enough with different statuses
+//printf("@@@SSL_get_state: method is called, note that is partial implementation\n");
+int ret = 0;
+clock_gettime(CLOCK_MONOTONIC, &t1);
+ecall_ssl_get_state(eid, &ret);
+clock_gettime(CLOCK_MONOTONIC, &t2);
+if (state_i<SAMPLE_SIZE)
+        {
+        ssl_state_enclave_time[state_i]=timerdiff(&t2, &t1);     
+        state_i++;
+        }
+if (state_i==SAMPLE_SIZE)
+        {
+        ofstream myfile ("ssl_state.txt");
+        if (myfile.is_open())
+             {
+             for(int count = 0; count < SAMPLE_SIZE; count ++){
+                myfile << ssl_state_enclave_time[count] << "\n " ;
+                }
+             myfile.close();
+             state_i++;
+                }
+        else cout << "Unable to open file";
+        }
+//printf("@@@SSL_get_state: after ecall: state is %d\n", ret);
+return ret;
+}
+//Following methods are not needed in SGX based ovs stream-ssl.c
+int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str)
+{
+PRINT_FUNC();
+//printf("@@@SSL_CTX_set_cipher_list: method is not implemented yet, let us see what are the default cipher suits for mbedtls\n");
+return 1;
+}
+
+void SSL_set_msg_callback(SSL_CTX *ctx, void* reserved_for_cb)
+{
+PRINT_FUNC();
+//printf("@@@SSL_set_msg_callback:method is not implemented\n");
+return;
+}
+
+void SSL_set_msg_callback_arg(SSL_CTX *ctx, void *arg)
+{
+PRINT_FUNC();
+//printf("@@@SSL_set_msg_callback_arg: method is not implemented\n");
+return;
+}
+
+void SSL_CTX_set_tmp_dh_callback(SSL_CTX *ctx, void* reserved_for_cb)
+{
+PRINT_FUNC();
+//printf("@@@SSL_CTX_set_tmp_dh_callback:method is not implemented\n");
+return;
+}
+
+long SSL_CTX_set_session_cache_mode(SSL_CTX *ctx, long mode)
+{
+PRINT_FUNC();
+//in mbedtls if mbedtls_ssl_conf_session_cache not set then no session resuming is done
+return 1;
+}
+
+long SSL_CTX_set_options(SSL_CTX *ctx, long options)
+{
+PRINT_FUNC();
+// In mbedtls SSLv2 never implemented and SSLv3 is disabled by default
+// Open vSwitch sets the options SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3
+return options;
+}
+
+int SSL_CTX_check_private_key(const SSL_CTX *ctx)
+{
+PRINT_FUNC();
+// Private key and certificate are within the enclave and would never leave the enclave
+ //printf("@@@SSL_CTX_check_private_key:Private key and certificate are within the enclave and would never leave the enclave\n");
+return 1;
+}
+
+int SSL_shutdown(SSL *ssl)
+{
+PRINT_FUNC();
+int ret=0;
+ecall_ssl_shutdown(eid, &ret);
+return ret;
+}
+

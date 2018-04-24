@@ -1,0 +1,28 @@
+1. Clone mbedtls-sgx
+	git clone https://github.com/bl4ck5un/mbedtls-SGX.git
+
+2. Checkout the following commit
+	cd mbedtls-SGX/
+	git checkout 0ff0f8217f10a34754638a328fe02bd08c16e878
+	cd ..
+
+3. Clone mbedtls
+	git clone https://github.com/ARMmbed/mbedtls.git
+
+4. Browse to mbedtls and create libraries that needed by non-enclave dependant methods in the wrapper
+	cd mbedtls/
+	make
+	cd ..
+
+5. Update Makefile with pathes for mbedtls-SGX and mbedtls
+
+6. To be improved:
+	Update CA Server IP in Enclave/Enclave.c 
+
+6. make  SGX_MODE=HW SGX_PRERELEASE=1 SGX_DEBUG=0
+
+7. cp enclave.signed.so OVS_PATH
+
+8. Create libwrapper_sgx library 
+	make wrapper_library
+
